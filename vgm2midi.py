@@ -473,10 +473,6 @@ def process_vgm_to_midi(
         )
     os.makedirs(output_dir, exist_ok=True)
     (
-        psg_log_csv,
-        scc_log_csv,
-        psg_trace_csv,
-        scc_trace_csv,
         opll_log_csv,
         opll_trace_csv,
         opll_voice_csv,
@@ -541,8 +537,7 @@ def process_vgm_to_midi(
         fh.write(midi_bytes)
 
     if not debug:
-        for _csv in [psg_log_csv, scc_log_csv, psg_trace_csv, scc_trace_csv,
-                     opll_log_csv, opll_trace_csv, opll_voice_csv, opll_regs_csv]:
+        for _csv in [opll_log_csv, opll_trace_csv, opll_voice_csv, opll_regs_csv]:
             try:
                 if _csv and os.path.isfile(_csv):
                     os.remove(_csv)
