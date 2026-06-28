@@ -1,17 +1,37 @@
 # vgm2midi
 
-VGM（YM2413 / OPLL）ファイルを Standard MIDI File（SMF フォーマット 0）に変換するスクリプトです。
+YM2413 / OPLL を使用した VGM ファイルを  
+Standard MIDI File（SMF Format 0）へ変換するツールです。
+
+FM メロディ（ch0–8）と OPLL リズム（BD/SD/TOM/TC/HH/CYM）を解析し、  
+**General MIDI（GM）** または **Yamaha TX802** 向けの MIDI データを生成します。
 
 ---
 
-## 機能概要
+## 特徴
 
-- YM2413 OPLL FM チャンネル（ch0〜8）をメロディとして出力
-- OPLL リズムチャンネル（BD / SD / TOM / TC / HH）を GM ドラムノートとして出力
-- OPLL プリセット音色を GM（General MIDI）プログラムに自動マッピング
-- BPM は VGM から自動検出
-- ユーザー定義音色は `<stem>.user_voice.json` で GM 音色番号を手動指定可能
-- ポルタメントを検出し MIDI CC84 / CC65 / CC5 として出力
+- YM2413（OPLL）の FM チャンネルを MIDI ノートへ変換  
+- OPLL リズムを GM または RX21 ドラムノートへ変換  
+- BPM を VGM から自動検出  
+- ポルタメント（is_portamento=1）を MIDI CC84/65/5 で再現  
+- inst=0（ユーザー音色）は JSON に保存し、再変換時に反映  
+- GM / TX802 のどちらにも対応  
+- melody_mode による **3 種類の音色マッピング**  
+  - default：音名ベースの自然なマッピング  
+  - gm：GM の音名に忠実なマッピング  
+  - opll：OPLL の音色性格を GM/TX802 上で再現するマッピング  
+
+---
+
+## インストール
+
+Python 3.10 以上を推奨。
+
+```bash
+git clone https://github.com/xxxx/vgm2midi
+cd vgm2midi
+pip install -r requirements.txt
+```
 
 ---
 
@@ -25,146 +45,340 @@ python vgm2midi.py [オプション] <入力VGMファイル>
 
 | ファイル | 説明 |
 |---------|------|
-| `<stem>.mid` | SMF フォーマット 0 の MIDI ファイル |
-| `<stem>.user_voice.json` | ユーザー定義音色の GM 割り当て設定ファイル（ユーザー音色が存在する場合のみ生成） |
+| `<stem>.mid` | 生成された MIDI ファイル（SMF Format 0） |
+| `<stem>.user_voice.json` | inst=0 のユーザー音色マッピング（必要時のみ生成） |
 
-### 基本例
+---
+
+## 主なオプション
+
+| オプション | 説明 |
+|-----------|------|
+| `--target {gm,tx802}` | 出力先音源（デフォルト: gm） |
+| `--melody_mode {default,gm,opll}` | メロディ音色のマッピング方式 |
+| `--rhythm_mode {gm,rx21}` | リズムマッピング方式 |
+| `--outdir DIR` | 出力ディレクトリ |
+| `--ppq N` | MIDI PPQ（デフォルト: 480） |
+| `--debug` | 中間 CSV を保持し詳細ログを表示 |
+
+---
+
+## --target {gm,tx802}
+
+出力先音源を選択します。
+
+- **gm**  
+  標準 GM 音源向けの MIDI を生成（デフォルト）
+
+- **tx802**  
+  Yamaha TX802 向けに Bank Select + Program Change を出力  
+  TX802 のプリセット A/B を使用した音色マッピングを行う
+
+---
+
+## --melody_mode {default,gm}
+
+OPLL の FM メロディ音色を GM/TX802 に割り当てる方式を選択します。
+
+### **default**
+TX802:
+OPLL の音色の各パラメータとTX802のプリセット A/Bの各パラメータ間の最短距離を計算し、最も距離が近いものTOP3から策定した変換テーブルを使用
+ユーザパッチも同様にTX802のプリセット A/Bから最も距離が近いものを選択
+
+GM:
+--target=tx802, --melody_mode=defaultで選出された音色をリファレンスとして、GMの音色を選出
+
+
+### **gm**
+GM の音色名に忠実なマッピング。  
+OPLL の音色番号を GM の標準 Program に直接対応させる。
+
+
+---
+
+## --rhythm_mode {gm,rx21}
+
+OPLL リズムのマッピング方式を選択します。
+
+- **gm**  
+  GM ドラムノートにマッピング  
+  TOM / HH / TC は OPLL の scale に応じて可変
+
+- **rx21**  
+  Yamaha RX21 のドラムパッドにマッピング  
+  scale に応じて音程が変化
+
+---
+
+## 出力ファイル名の命名規則
+```
+<stem>_<postfix>.mid
+```
+- <stem> … 入力ファイル名のベース部分
+
+- <postfix> … target / melody_mode / rhythm_mode の組み合わせで決定
+
+## postfix 対応表
+| target | melody_mode | rhythm_mode | postfix |
+| --- | --- | --- | --- |
+| tx802 | default | gm | ``_default_gm`` |
+| tx802 | default | rx21 | ``_default_rx21`` |
+| tx802 | name | gm | ``_name_gm`` |
+| tx802 | name | rx21 | ``_name_rx21`` |
+| gm | default | gm | ``_default_gm`` |
+| gm | default | rx21 | ``_default_r21`` |
+| gm | name | gm | ``_name_gm`` |
+| gm | name | rx21 | ``_name_rx21`` |
+---
+
+## 使用例
+
+### 1. GM 用に変換（デフォルト）
 
 ```bash
 python vgm2midi.py mysong.vgm
 ```
 
-出力: `mysong.mid`、`mysong.user_voice.json`（ユーザー音色がある場合）
-
----
-
-## オプション
-
-| オプション | 説明 |
-|-----------|------|
-| `--outdir DIR` | 出力ディレクトリを指定（省略時: VGM ファイルと同じディレクトリ） |
-| `--ppq N` | MIDI の PPQ（クォーターノートあたりのティック数）を指定（デフォルト: 480） |
-| `--debug` | デバッグ情報を表示し、中間 CSV ファイルを保持 |
-
----
-
-## 基本フロー
-
-### 1. VGM ファイルを MIDI に変換する
+### 2. TX802 用に変換 (--melody_mode=default : OPLL の音色性格を再現したマッピングで変換)
 
 ```bash
-python vgm2midi.py test.vgm
+python vgm2midi.py --target=tx802 mysong.vgm
 ```
 
-`test.mid` と `test.user_voice.json`（ユーザー音色がある場合）が生成されます。
-
-### 2. ユーザー音色のマッピングを確認・編集する
-
-変換時にユーザー定義音色が検出されると、レジスタの設定値がコンソールに表示されます。
-
-```
-User patch Inst 20 (1-indexed:21) -> GM program 20
-Inst 20: 'User patch v15' regs = 00 00 05 02 F0 E0 02 FF
-        TL= 5 FB=1
-        MO: AR=15 DR= 0 SL= 0 RR= 2 KL=0 MT= 0 AM=0 VB=0 EG=0 KR=0 DT=0
-        CA: AR=14 DR= 0 SL=15 RR=15 KL=0 MT= 0 AM=0 VB=0 EG=0 KR=0 DT=0
-```
-
-`TL` から `DT` までのテキストをコピーして、この音色に近い GM 音色を AI に尋ねてみてください。
-いくつか候補を提示してもらったら、気に入った番号を `test.user_voice.json` の該当エントリの値として書き換えます。
-
-> **GM プログラム番号は 0-indexed です。**  
-> DAW などで表示される 1-indexed の番号から 1 を引いた値を設定してください。  
-> 例: DAW 表示「Flute = 74」→ JSON には `73` を指定。
-
-### 3. 再度変換する
+### 3.  音名に忠実なマッピングで変換
 
 ```bash
-python vgm2midi.py test.vgm
+python vgm2midi.py --melody_mode=name mysong.vgm
 ```
 
-`test.user_voice.json` が既に存在する場合はそのマッピングが読み込まれ、指定した GM 音色が反映された `test.mid` が生成されます。`test.user_voice.json` の内容は上書きされません。
+### 4. RX21 リズムマッピングを使用
+
+```bash
+python vgm2midi.py --rhythm_mode=rx21 mysong.vgm
+```
+
+### 5. 出力先ディレクトリを指定
+
+```bash
+python vgm2midi.py --outdir=./out mysong.vgm
+```
 
 ---
 
-## ユーザー定義音色について
+## ユーザー音色（inst=0）について
 
-### user_voice.json の構造
+変換時に inst=0 の音色が検出されると、  
+`<stem>.user_voice.json` が生成されます。
 
-```json
-{
-  "_comment": "...",
-  "0000050002f0e002ff": 20,
-  "_voice_info": {
-    "0000050002f0e002ff": [
-      "User patch Inst 20 (1-indexed:21) -> GM program 20",
-      "..."
-    ]
-  }
-}
-```
+- GM モードでは GM Program 番号を指定  
+- TX802 モードでは Bank(A or B) / Voice 番号を指定  
 
-| キー | 説明 |
-|-----|------|
-| `"<patch_hex>"` | OPLL パッチデータ（16 進数 16 文字） |
-| 値（整数） | GM プログラム番号（0-indexed） |
-| `_comment` | ファイル説明（自動生成・編集不要） |
-| `_voice_info` | 各パッチのレジスタデコード情報（参照用・編集不要） |
-
-`_` で始まるキーはすべて読み込み時に無視されます。
-
-### all-zero パッチについて
-
-レジスタへの書き込みが一切なかった場合、パッチデータは `0000000000000000` となります。
-これは「未使用」を示す sentinel として自動的に **GM 127（Gunshot）** に固定され、以下のように表示されます。
-
-```
-User patch v15: all-zero (no register written) -> GM program 127 (1-indexed:128, unused)
-```
-
-このエントリは `user_voice.json` を編集しても反映されません（毎回 GM 127 に上書きされます）。
-
----
-
-## OPLL → GM プログラム対応表
-
-| OPLL プリセット | GM プログラム（0-indexed） | 音色名（目安） |
-|:--------------:|:------------------------:|:-------------|
-| 0（ユーザー定義） | 81 | Lead 2 (sawtooth) |
-| 1 | 40 | Violin |
-| 2 | 25 | Acoustic Guitar (steel) |
-| 3 | 0 | Acoustic Grand Piano |
-| 4 | 73 | Flute |
-| 5 | 71 | Clarinet |
-| 6 | 68 | Oboe |
-| 7 | 56 | Trumpet |
-| 8 | 19 | Church Organ |
-| 9 | 60 | French Horn |
-| 10 | 81 | Lead 2 (sawtooth) |
-| 11 | 6 | Harpsichord |
-| 12 | 11 | Vibraphone |
-| 13 | 38 | Synth Bass 1 |
-| 14 | 32 | Acoustic Bass |
-| 15 | 27 | Electric Guitar (clean) |
-
-ユーザー定義音色（プリセット 0）は、`user_voice.json` で個別に GM 音色を指定できます（上記の 81 はフォールバック値です）。
-
----
-
-## リズム → GM ノート対応表
-
-リズムチャンネルは MIDI チャンネル 10（0-indexed: 9）に出力されます。
-
-| OPLL リズム | GM ノート | 説明 |
-|:-----------:|:--------:|:-----|
-| BD | 35 | Acoustic Bass Drum |
-| SD | 38 | Acoustic Snare |
-| TOM | 41 | Low Floor Tom |
-| TC | 49 | Crash Cymbal 1 |
-| HH | 42 | Closed Hi-Hat |
+JSON を編集して再度変換すると、指定した音色が反映されます。  
+既存の JSON は上書きされません。
 
 ---
 
 ## ライセンス
+
+MIT License
+
+---
+# vgm2midi
+
+`vgm2midi` converts VGM files using YM2413 / OPLL into  
+Standard MIDI File (SMF Format 0).
+
+It analyzes FM melody channels (ch0–8) and OPLL rhythm (BD/SD/TOM/TC/HH/CYM),  
+and generates MIDI data optimized for **General MIDI (GM)** or **Yamaha TX802**.
+
+---
+
+## Features
+
+- Converts YM2413 (OPLL) FM channels into MIDI notes  
+- Converts OPLL rhythm into GM or RX21 drum notes  
+- Automatically detects BPM from VGM  
+- Portamento (`is_portamento=1`) is output as CC84 / CC65 / CC5  
+- inst=0 (user patches) are saved into JSON and reused on next conversion  
+- Supports both GM and TX802 output modes  
+- Three melody mapping modes:  
+  - **default** — natural mapping based on instrument names  
+  - **gm** — strict General MIDI program mapping  
+  - **opll** — mapping that reproduces OPLL timbral character on GM/TX802  
+
+---
+
+## Installation
+
+Python 3.10+ recommended.
+
+```bash
+git clone https://github.com/xxxx/vgm2midi
+cd vgm2midi
+pip install -r requirements.txt
+```
+
+---
+
+## Usage
+
+```bash
+python vgm2midi.py [options] <input.vgm>
+```
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `<stem>.mid` | Generated MIDI file (SMF Format 0) |
+| `<stem>.user_voice.json` | User patch mapping (only created when inst=0 is used) |
+
+---
+
+## Main Options
+
+| Option | Description |
+|--------|-------------|
+| `--target {gm,tx802}` | Output target (default: gm) |
+| `--melody_mode {default,name}` | Melody mapping style |
+| `--rhythm_mode {gm,rx21}` | Rhythm mapping style |
+| `--outdir DIR` | Output directory |
+| `--ppq N` | MIDI PPQ (default: 480) |
+| `--debug` | Keep intermediate CSV and show detailed logs |
+
+---
+
+## --target {gm,tx802}
+
+Select output sound module.
+
+### **gm**
+Standard General MIDI output (default).  
+Produces a single-track SMF0 file with GM Program Change messages.
+
+### **tx802**
+Outputs Bank Select + Program Change for Yamaha TX802.  
+Uses TX802 preset banks A/B and applies FM‑oriented velocity and portamento behavior.
+
+---
+
+### --melody_mode {default, name}
+
+Selects how OPLL FM melody voices are mapped to GM or TX802 instruments.
+
+
+## **default**
+### **TX802**
+Uses a parameter‑distance–based mapping strategy.
+
+- For each OPLL preset, the system computes the shortest parameter distance to all TX802 A/B preset voices.  
+- From the closest **TOP 3** candidates, a curated conversion table is constructed.  
+- User‑defined patches are also matched by selecting the TX802 preset with the smallest parameter distance.
+
+### **GM**
+GM voice selection is derived from the TX802 results:
+
+- The GM instrument is chosen by referencing the TX802 voice selected under  
+  **--target=tx802, --melody_mode=default**.  
+- In other words, GM mapping follows the timbral category implied by the TX802 default mapping.
+
+
+## **name**
+A name‑faithful GM mapping.
+
+- Each OPLL instrument number is directly mapped to the corresponding **General MIDI Program** based on standard GM instrument categories.  
+- This mode ignores TX802 characteristics and follows GM naming conventions strictly.
+
+
+If you want, I can also update the full README.md section or generate a polished documentation block.  
+Update full README.md section
+
+---
+
+## --rhythm_mode {gm,rx21}
+
+Select rhythm mapping.
+
+### **gm**
+Maps OPLL rhythm to GM drum notes.  
+TOM / HH / TC vary depending on OPLL scale.
+
+### **rx21**
+Maps OPLL rhythm to Yamaha RX21 drum layout.  
+Scale affects pitch selection.
+
+---
+
+## Output Filename Format
+```
+<stem>_<postfix>.mid
+```
+- <stem> … base name of the input file
+
+- <postfix> … determined by the combination of target, melody_mode, and rhythm_mode
+
+## postfix 対応表
+| target | melody_mode | rhythm_mode | postfix |
+| --- | --- | --- | --- |
+| tx802 | default | gm | ``_tx802_default_gm`` |
+| tx802 | default | rx21 | ``_tx802_default_rx21`` |
+| tx802 | name | gm | ``_tx802_name_gm`` |
+| tx802 | name | rx21 | ``_tx802_name_rx21`` |
+| gm | default | gm | ``_gm_default_gm`` |
+| gm | default | rx21 | ``_gm_default_rx21`` |
+| gm | name | gm | ``_gm_name_gm`` |
+| gm | name | rx21 | ``_gm_name_rx21`` |
+
+
+---
+
+## Examples
+
+### Convert to GM (default)
+
+```bash
+python vgm2midi.py mysong.vgm
+```
+
+### Convert for TX802 (--melody_mode=default: Use OPLL‑style timbre mapping)
+
+```bash
+python vgm2midi.py --target=tx802 mysong.vgm
+```
+
+### Use strict vvoice name based mapping
+
+```bash
+python vgm2midi.py --melody_mode=name mysong.vgm
+```
+
+### Use RX21 rhythm mapping
+
+```bash
+python vgm2midi.py --rhythm_mode=rx21 mysong.vgm
+```
+
+### Specify output directory
+
+```bash
+python vgm2midi.py --outdir=./out mysong.vgm
+```
+
+---
+
+## User Patches (inst=0)
+
+When inst=0 is detected,  
+`<stem>.user_voice.json` is created.
+
+- In **GM mode**: specify GM Program numbers  
+- In **TX802 mode**: specify Bank / Voice numbers  
+
+Editing the JSON and re-running the conversion applies your custom mapping.  
+The JSON file is never overwritten.
+
+---
+
+## License
 
 MIT License

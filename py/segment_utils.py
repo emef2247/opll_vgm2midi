@@ -2,6 +2,7 @@ import sys
 import os
 import math
 import csv
+import random
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -1529,3 +1530,56 @@ def pass4_dump_csv(events, trace_csv_path):
             writer.writerow(ev)
 
     print(f"[PASS4] Debug CSV written: {out_csv_path}")
+
+def compute_velocity(seg: _Segment):
+    base = 80  # 基本値（TX802 は 80 前後が自然）
+
+    # 1. 音量(vol)を軽く反映（ただし支配させない）
+    base += int((seg.vol / 15) * 30)  # +0〜30
+
+    # 2. ioi（音符の短さ）で強弱
+    if seg.ioi > 0:
+        # ioi が短いほど強く、長いほど弱く
+        ioi_factor = max(0.8, min(1.1, seg.min_ioi / seg.ioi))
+        base = int(base * ioi_factor)
+
+    # 3. レガートならアタック弱め
+    if seg.is_legato:
+        base -= 5 # 15
+
+    # 4. ポルタメント中はアタックほぼ無し
+    if seg.is_portamento:
+        base -= 10 # 25
+
+    # 5. ランダムゆらぎ（人間味）
+    base += random.randint(-4, 4)
+
+    return max(45, min(127, base))
+
+def compute_portamento_time(seg: _Segment, prev_note: int, midi_note: int, bpm: int) -> int:
+    """
+    TX802 用ポルタメント時間を音楽的に計算する。
+    - 音程差（半音）
+    - セグメント長（tick）
+    - テンポ（BPM）
+    を総合して決める。
+    """
+
+    # 1. 音程差（半音）
+    note_diff = abs(midi_note - prev_note)
+    if note_diff == 0:
+        note_diff = 1  # 0 だと計算不能
+
+    # 2. セグメント長（tick）
+    seg_len = max(1, int(getattr(seg, "l", 1)))
+
+    # 3. テンポ（tick → 秒換算）
+    #    1 tick = 60 / (bpm * ppq)
+    #    ただし ppq は外で固定されているので、ここでは相対値として扱う
+    tempo_factor = 120 / max(30, bpm)  # BPM が速いほど短く、遅いほど長く
+
+    # 4. 音程差が大きいほど時間を長くする
+    base = seg_len * tempo_factor * (note_diff / 12)
+
+    # 5. TX802 の CC5 は 0〜127 にクリップ
+    return max(1, min(127, int(base)))

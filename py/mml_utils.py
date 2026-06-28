@@ -426,3 +426,4 @@ def compress_mml_text(mml_text):
                 line = line[:leading] + compressed + trailing
         result.append(line)
     return ''.join(result)
+

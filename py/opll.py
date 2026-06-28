@@ -151,6 +151,24 @@ RHYTHM_VOICE_ID_MAP = {
     "hh": 20,
 }
 
+# RX21 Instrument Number
+# BD        45(A1)
+# TOM3      48(C2)
+# TOM2      50(D2)
+# SD        52 (E2)
+# TOM1      53(F2)
+# CLAPS     54 (F#2)
+# HH CLOSED 57 (A2)
+# HH OPEN   59 (B2)
+# CYM       60 (C3)
+RHYTHM_VOICE_ID_MAP_RX21 = {
+    "bd":  45,
+    "sd":  52,
+    "tom": 53,
+    "tc":  60,
+    "hh":  57,
+}
+
 NUM_CH = 18  # 0-8: OPLL, 13-17: Rhythm など
 IMPLICIT_RETRIGGER_MIN_GAP = 2
 IMPLICIT_RETRIGGER_MAX_GAP = 32
